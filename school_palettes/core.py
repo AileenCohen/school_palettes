@@ -1,5 +1,11 @@
-from matplotlib.colors import ListedColormap, LinearSegmentedColormap
-from IPython.display import HTML, display
+import matplotlib as mpl
+from matplotlib.colors import ListedColormap, LinearSegmentedColormap, to_hex
+
+try:
+    from IPython.display import HTML, display
+except ImportError:
+    HTML = None
+    display = None
 
 FROGS = {
     'ramaconica': ['#3C6B78', '#538D71', '#CFA838', '#A26021', '#983E18'],
@@ -183,49 +189,114 @@ ALL_PALETTES = {**FROGS, **FISH, **LTC, **NATURE}
 
 
 class Palette(list):
-    """A list of hex colors that automatically renders as a visual swatch in Jupyter."""
+    """
+    A list of hex colors that supports both discrete categorical plotting
+    and smooth continuous colormaps (for Pearson's r correlation matrices, heatmaps, etc.).
+    """
     def __init__(self, name, colors):
         super().__init__(colors)
         self.name = name
 
+    def __getitem__(self, item):
+        """Ensures slicing (e.g. skl.ramaconica[:3] or [::-1]) returns a visual Palette."""
+        result = super().__getitem__(item)
+        if isinstance(item, slice):
+            return Palette(f"{self.name}[slice]", result)
+        return result
+
+    def __call__(self, n=256, as_cmap=False):
+        """
+        Generate `n` smoothly interpolated hex colors from this palette,
+        or return a continuous Matplotlib colormap with `n` bins if as_cmap=True.
+        Example: skl.heatmap2(10) -> returns 10 smoothly spaced hex colors.
+        """
+        smooth_map = LinearSegmentedColormap.from_list(self.name, self, N=n)
+        if as_cmap:
+            return smooth_map
+        if n <= 1:
+            return Palette(f"{self.name}(1)", [to_hex(smooth_map(0.5))])
+        interpolated_hex = [to_hex(smooth_map(i / (n - 1))) for i in range(n)]
+        return Palette(f"{self.name}({n})", interpolated_hex)
+
+    @property
+    def reversed(self):
+        """Returns a reversed version of the palette."""
+        return Palette(f"{self.name}_r", self[::-1])
+
     @property
     def cmap(self):
-        """Returns a discrete Matplotlib ListedColormap."""
-        return ListedColormap(self, name=self.name)
+        """
+        Returns a smooth, continuous Matplotlib LinearSegmentedColormap (256 bins).
+        Ideal for Pearson's r correlation matrices, heatmaps, and continuous scatterbars.
+        """
+        return LinearSegmentedColormap.from_list(self.name, self, N=256)
 
     @property
     def continuous_cmap(self):
-        """Returns a smooth, interpolated Matplotlib LinearSegmentedColormap."""
-        return LinearSegmentedColormap.from_list(self.name, self)
+        """Alias for .cmap: returns a smooth LinearSegmentedColormap."""
+        return self.cmap
+
+    @property
+    def discrete_cmap(self):
+        """Returns a stepped, discrete Matplotlib ListedColormap."""
+        return ListedColormap(self, name=f"{self.name}_discrete")
 
     def _repr_html_(self):
         """Automatically called by Jupyter when you type `skl.palette_name`."""
         swatches = ""
         for color in self:
             swatches += (
-                f"<div style='display:inline-block; text-align:center; margin-right:6px;'>"
-                f"<div style='background:{color}; width:65px; height:45px; border-radius:6px; "
+                f"<div style='display:inline-block; text-align:center; margin-right:6px; margin-bottom:6px;'>"
+                f"<div style='background:{color}; width:65px; height:42px; border-radius:6px; "
                 f"border:1px solid rgba(0,0,0,0.15); box-shadow: 0 1px 3px rgba(0,0,0,0.1);'></div>"
                 f"<div style='font-size:11px; font-family:monospace; margin-top:4px; color:#444;'>{color}</div>"
                 f"</div>"
             )
+        smooth_grad = ", ".join(self)
+        total_width = max(len(self) * 71 - 6, 260)
+        continuous_bar = (
+            f"<div style='margin-top: 6px;'>"
+            f"<div style='font-size:11px; color:#666; margin-bottom:3px;'>"
+            f"Continuous Gradient (<code>.cmap</code> / <code>cmap=\"{self.name}\"</code>):</div>"
+            f"<div style='background: linear-gradient(to right, {smooth_grad}); "
+            f"width: {total_width}px; max-width: 100%; height: 22px; border-radius: 4px; "
+            f"border: 1px solid rgba(0,0,0,0.15);'></div>"
+            f"</div>"
+        )
         return (
             f"<div style='margin: 8px 0; font-family: sans-serif;'>"
             f"<div style='font-weight:bold; margin-bottom:6px; font-size:14px;'>🎨 Palette: <code>{self.name}</code></div>"
-            f"{swatches}</div>"
+            f"<div>{swatches}</div>"
+            f"{continuous_bar}</div>"
         )
 
 
+def _register_all_colormaps():
+    """Registers all palettes and their reversed counterparts into Matplotlib."""
+    for name, colors in ALL_PALETTES.items():
+        try:
+            cmap = LinearSegmentedColormap.from_list(name, colors, N=256)
+            cmap_r = LinearSegmentedColormap.from_list(f"{name}_r", colors[::-1], N=256)
+            mpl.colormaps.register(cmap=cmap, force=True)
+            mpl.colormaps.register(cmap=cmap_r, force=True)
+        except Exception:
+            pass
+
+
+_register_all_colormaps()
+
+
 def _render_html_table(title, target_dict):
-    """Helper function to generate HTML preview tables for libraries."""
+    """Helper function to generate HTML preview tables showing both discrete and continuous bars."""
     html_output = f"<h3 style='font-family:sans-serif; margin-bottom:8px;'>🏫 {title} ({len(target_dict)} palettes)</h3>"
-    html_output += "<div style='max-height: 500px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px;'>"
+    html_output += "<div style='max-height: 550px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px;'>"
     html_output += "<table style='border-collapse: collapse; width: 100%; font-family: sans-serif;'>"
     html_output += (
         "<thead style='position: sticky; top: 0; background-color: #f8f9fa; z-index: 1;'>"
         "<tr>"
         "<th style='padding: 10px; text-align: left; border-bottom: 2px solid #ddd;'>Palette Name</th>"
-        "<th style='padding: 10px; text-align: left; border-bottom: 2px solid #ddd;'>Colors Preview</th>"
+        "<th style='padding: 10px; text-align: left; border-bottom: 2px solid #ddd;'>Discrete Swatch</th>"
+        "<th style='padding: 10px; text-align: left; border-bottom: 2px solid #ddd;'>Continuous (.cmap)</th>"
         "<th style='padding: 10px; text-align: left; border-bottom: 2px solid #ddd;'>Hex Codes</th>"
         "</tr></thead><tbody>"
     )
@@ -238,17 +309,25 @@ def _render_html_table(title, target_dict):
             end = ((idx + 1) / num_colors) * 100
             color_stops.append(f"{color} {start:.1f}% {end:.1f}%")
 
-        gradient_str = ", ".join(color_stops)
-        preview_style = (
-            f"background: linear-gradient(to right, {gradient_str}); "
-            f"width: 260px; height: 28px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.15);"
+        discrete_grad = ", ".join(color_stops)
+        discrete_style = (
+            f"background: linear-gradient(to right, {discrete_grad}); "
+            f"width: 180px; height: 26px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.15);"
         )
+
+        smooth_grad = ", ".join(colors)
+        continuous_style = (
+            f"background: linear-gradient(to right, {smooth_grad}); "
+            f"width: 180px; height: 26px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.15);"
+        )
+
         hex_str = ", ".join(f"<code>{c}</code>" for c in colors)
 
         html_output += (
             f"<tr style='border-bottom: 1px solid #eee;'>"
             f"<td style='padding: 10px; font-weight: bold;'>{pal_name}</td>"
-            f"<td style='padding: 10px;'><div style='{preview_style}'></div></td>"
+            f"<td style='padding: 10px;'><div style='{discrete_style}'></div></td>"
+            f"<td style='padding: 10px;'><div style='{continuous_style}'></div></td>"
             f"<td style='padding: 10px; font-size: 12px; color: #555;'>{hex_str}</td>"
             f"</tr>"
         )
@@ -297,8 +376,28 @@ class School:
         """Automatically displays all palettes when typing `skl` in a cell."""
         return _render_html_table("All School Palettes", self._all)
 
+    def get_cmap(self, name, n=256, discrete=False):
+        """Retrieve a Matplotlib colormap by name."""
+        name_clean = name.lower()
+        reverse = False
+        if name_clean.endswith("_r") and name_clean[:-2] in self._all:
+            name_clean = name_clean[:-2]
+            reverse = True
+
+        if name_clean not in self._all:
+            raise ValueError(f"Unknown palette '{name}'. Use skl.list_palettes() to see available names.")
+
+        pal = self._all[name_clean].reversed if reverse else self._all[name_clean]
+        if discrete:
+            return pal.discrete_cmap
+        return LinearSegmentedColormap.from_list(name, pal, N=n)
+
     def show_table(self, name=None):
         """Explicitly render a table for all palettes, a sub-library, or a single palette."""
+        if display is None or HTML is None:
+            print("IPython is required to render HTML tables.")
+            return
+
         if name is None:
             display(HTML(self._repr_html_()))
             return
