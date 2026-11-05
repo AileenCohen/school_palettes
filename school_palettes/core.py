@@ -1,4 +1,4 @@
-import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 from IPython.display import HTML, display
 
 FROGS = {
@@ -181,15 +181,100 @@ NATURE = {
 
 ALL_PALETTES = {**FROGS, **FISH, **LTC, **NATURE}
 
+
+class Palette(list):
+    """A list of hex colors that automatically renders as a visual swatch in Jupyter."""
+    def __init__(self, name, colors):
+        super().__init__(colors)
+        self.name = name
+
+    @property
+    def cmap(self):
+        """Returns a discrete Matplotlib ListedColormap."""
+        return ListedColormap(self, name=self.name)
+
+    @property
+    def continuous_cmap(self):
+        """Returns a smooth, interpolated Matplotlib LinearSegmentedColormap."""
+        return LinearSegmentedColormap.from_list(self.name, self)
+
+    def _repr_html_(self):
+        """Automatically called by Jupyter when you type `skl.palette_name`."""
+        swatches = ""
+        for color in self:
+            swatches += (
+                f"<div style='display:inline-block; text-align:center; margin-right:6px;'>"
+                f"<div style='background:{color}; width:65px; height:45px; border-radius:6px; "
+                f"border:1px solid rgba(0,0,0,0.15); box-shadow: 0 1px 3px rgba(0,0,0,0.1);'></div>"
+                f"<div style='font-size:11px; font-family:monospace; margin-top:4px; color:#444;'>{color}</div>"
+                f"</div>"
+            )
+        return (
+            f"<div style='margin: 8px 0; font-family: sans-serif;'>"
+            f"<div style='font-weight:bold; margin-bottom:6px; font-size:14px;'>🎨 Palette: <code>{self.name}</code></div>"
+            f"{swatches}</div>"
+        )
+
+
+def _render_html_table(title, target_dict):
+    """Helper function to generate HTML preview tables for libraries."""
+    html_output = f"<h3 style='font-family:sans-serif; margin-bottom:8px;'>🏫 {title} ({len(target_dict)} palettes)</h3>"
+    html_output += "<div style='max-height: 500px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px;'>"
+    html_output += "<table style='border-collapse: collapse; width: 100%; font-family: sans-serif;'>"
+    html_output += (
+        "<thead style='position: sticky; top: 0; background-color: #f8f9fa; z-index: 1;'>"
+        "<tr>"
+        "<th style='padding: 10px; text-align: left; border-bottom: 2px solid #ddd;'>Palette Name</th>"
+        "<th style='padding: 10px; text-align: left; border-bottom: 2px solid #ddd;'>Colors Preview</th>"
+        "<th style='padding: 10px; text-align: left; border-bottom: 2px solid #ddd;'>Hex Codes</th>"
+        "</tr></thead><tbody>"
+    )
+
+    for pal_name, colors in target_dict.items():
+        color_stops = []
+        num_colors = len(colors)
+        for idx, color in enumerate(colors):
+            start = (idx / num_colors) * 100
+            end = ((idx + 1) / num_colors) * 100
+            color_stops.append(f"{color} {start:.1f}% {end:.1f}%")
+
+        gradient_str = ", ".join(color_stops)
+        preview_style = (
+            f"background: linear-gradient(to right, {gradient_str}); "
+            f"width: 260px; height: 28px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.15);"
+        )
+        hex_str = ", ".join(f"<code>{c}</code>" for c in colors)
+
+        html_output += (
+            f"<tr style='border-bottom: 1px solid #eee;'>"
+            f"<td style='padding: 10px; font-weight: bold;'>{pal_name}</td>"
+            f"<td style='padding: 10px;'><div style='{preview_style}'></div></td>"
+            f"<td style='padding: 10px; font-size: 12px; color: #555;'>{hex_str}</td>"
+            f"</tr>"
+        )
+
+    html_output += "</tbody></table></div>"
+    return html_output
+
+
 class SubLibrary:
     def __init__(self, name, palettes_dict):
         self._name = name
-        self._palettes = palettes_dict
-        for k, v in palettes_dict.items():
+        self._palettes = {k: Palette(k, v) for k, v in palettes_dict.items()}
+        for k, v in self._palettes.items():
             setattr(self, k, v)
-            
+
     def __repr__(self):
         return f"<School Sub-Library: {self._name} ({len(self._palettes)} palettes)>"
+
+    def _repr_html_(self):
+        """Automatically displays the table when typing `skl.frogs`, `skl.fish`, etc."""
+        return _render_html_table(f"Sub-Library: {self._name}", self._palettes)
+
+    def list_palettes(self):
+        """Returns a list of all palette names in this sub-library."""
+        return list(self._palettes.keys())
+
 
 class School:
     def __init__(self):
@@ -197,46 +282,37 @@ class School:
         self.fish = SubLibrary('fish', FISH)
         self.ltc = SubLibrary('ltc', LTC)
         self.nature = SubLibrary('nature', NATURE)
-        
-        for k, v in ALL_PALETTES.items():
+
+        self._all = {}
+        for sub in (self.frogs, self.fish, self.ltc, self.nature):
+            self._all.update(sub._palettes)
+
+        for k, v in self._all.items():
             setattr(self, k, v)
 
-    def show_table(self, sub_lib_name=None):
-        target_dict = ALL_PALETTES
-        title = "All Palettes"
-        
-        if sub_lib_name:
-            sub_lib_name = sub_lib_name.lower()
-            if sub_lib_name == 'frogs':
-                target_dict = FROGS
-            elif sub_lib_name == 'fish':
-                target_dict = FISH
-            elif sub_lib_name == 'ltc':
-                target_dict = LTC
-            elif sub_lib_name == 'nature':
-                target_dict = NATURE
-            else:
-                print(f"Unknown sub-library: '{sub_lib_name}'. Showing all instead.")
-            title = f"Sub-Library: '{sub_lib_name}'"
+    def __repr__(self):
+        return f"<School Palettes: {len(self._all)} total palettes across 4 sub-libraries (frogs, fish, ltc, nature)>"
 
-        html_output = f"<h3>🏫 {title}</h3>"
-        html_output += "<table style='border-collapse: collapse; width: 100%; font-family: sans-serif;'>"
-        html_output += "<tr style='background-color: #f2f2f2;'><th style='padding: 10px; text-align: left; border-bottom: 2px solid #ddd;'>Palette Name</th>"
-        html_output += "<th style='padding: 10px; text-align: left; border-bottom: 2px solid #ddd;'>Colors Preview</th></tr>"
-        
-        for pal_name, colors in target_dict.items():
-            color_stops = []
-            num_colors = len(colors)
-            for idx, color in enumerate(colors):
-                start = (idx / num_colors) * 100
-                end = ((idx + 1) / num_colors) * 100
-                color_stops.append(f"{color} {start}% {end}%")
-            
-            gradient_str = ", ".join(color_stops)
-            preview_style = f"background: linear-gradient(to right, {gradient_str}); width: 300px; height: 30px; border-radius: 4px; border: 1px solid #ccc;"
-            
-            html_output += f"<tr><td style='padding: 10px; font-weight: bold; border-bottom: 1px solid #eee;'>{pal_name}</td>"
-            html_output += f"<td style='padding: 10px; border-bottom: 1px solid #eee;'><div style='{preview_style}'></div></td></tr>"
-            
-        html_output += "</table>"
-        display(HTML(html_output))
+    def _repr_html_(self):
+        """Automatically displays all palettes when typing `skl` in a cell."""
+        return _render_html_table("All School Palettes", self._all)
+
+    def show_table(self, name=None):
+        """Explicitly render a table for all palettes, a sub-library, or a single palette."""
+        if name is None:
+            display(HTML(self._repr_html_()))
+            return
+
+        name_clean = name.lower()
+        if name_clean in ('frogs', 'fish', 'ltc', 'nature'):
+            sub_lib = getattr(self, name_clean)
+            display(HTML(sub_lib._repr_html_()))
+        elif name_clean in self._all:
+            display(HTML(self._all[name_clean]._repr_html_()))
+        else:
+            print(f"Unknown palette or sub-library: '{name}'. Showing all instead.")
+            display(HTML(self._repr_html_()))
+
+    def list_palettes(self):
+        """Returns a list of all available palette names."""
+        return list(self._all.keys())
