@@ -14,7 +14,7 @@
 Install directly from GitHub using `pip`:
 
 ```bash
-pip install git+[https://github.com/AileenCohen/school_palettes.git](https://github.com/AileenCohen/school_palettes.git)
+pip install git+https://github.com/AileenCohen/school_palettes.git
 ```
 
 ---
