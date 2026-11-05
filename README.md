@@ -5,7 +5,7 @@
 
 **School Palettes** is a Python color palette library containing **166 curated, nature-inspired color palettes** across four collections: Neotropical Poison Frogs, Marine & Freshwater Fish, LTC artistic palettes, and Nature landscapes.
 
-**Every single palette works as both a discrete categorical list AND a smooth, continuous colormap**—making it effortless to style everything from simple bar charts to high-density Pearson's $r$ correlation matrices and heatmaps.
+**Every single palette works as both a discrete categorical list AND a smooth, continuous colormap**, essentially making it effortless to style everything from simple bar charts to high-density Pearson's $r$ correlation matrices and heatmaps.
 
 ---
 
