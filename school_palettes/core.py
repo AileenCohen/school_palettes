@@ -415,3 +415,5 @@ class School:
     def list_palettes(self):
         """Returns a list of all available palette names."""
         return list(self._all.keys())
+
+skl = School()
